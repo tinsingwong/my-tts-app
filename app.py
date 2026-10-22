@@ -4,11 +4,9 @@ import azure.cognitiveservices.speech.translation as translation_sdk
 import streamlit.components.v1 as components
 import base64
 import os
-import time
 import tempfile
-import wave
 
-# ----------------- 請填入你的微軟官方免費金鑰 -----------------
+# ----------------- 請填入你的微軟官方金鑰與地區 -----------------
 AZURE_SPEECH_KEY = "2uqI9DDZVaNXRzfZwxdPJGkt6mxy3WaIRvqzNVTenetusXE7yVj2JQQJ99CJACREanaXJ3w3AAAYACOGWWTe"
 AZURE_SPEECH_REGION = "canadaeast"  
 # -----------------------------------------------------------
@@ -18,6 +16,35 @@ st.set_page_config(page_title="AI 語音全能助手", layout="centered", page_i
 st.title("🎙️ AI 語音全能助手")
 
 tab_tts, tab_stt = st.tabs(["🔊 文字轉語音 (發音)", "📝 語音轉文字 (聽寫/翻譯)"])
+
+# ==========================================
+# 廣東話口語轉正式書面中文對照庫
+# ==========================================
+CANTONESE_TO_WRITTEN = {
+    "佢哋": "他們", "佢地": "他們", "佢": "他",
+    "我哋": "我們", "我地": "我們",
+    "你哋": "你們", "你地": "你們",
+    "嘅": "的", "嘅話": "的話",
+    "唔係": "不是", "唔好": "不要", "唔使": "不用", "唔想": "不想", "唔會": "不會", "唔": "不",
+    "喺度": "正在", "喺": "在",
+    "睇下": "看一下", "睇吓": "看一下", "睇": "看",
+    "食飯": "吃飯", "食咗": "吃了", "食緊": "正在吃", "食": "吃",
+    "講嘢": "說話", "講": "說",
+    "點解": "為什麼", "點樣": "如何", "點做": "怎麼做",
+    "好耐": "很久", "好彩": "幸好",
+    "等陣": "稍後", "陣間": "待會兒", "尋日": "昨天", "琴日": "昨天", "聽日": "明天",
+    "邊度": "哪裡", "邊個": "誰", "喺邊": "在哪裡",
+    "屋企": "家裡", "返屋企": "回家", "返工": "上班", "收工": "下班",
+    "乜嘢": "什麼", "咩話": "說什麼", "咩": "什麼",
+    "冇問題": "沒問題", "冇嘢": "沒事", "冇": "沒有",
+    "買嘢": "買東西", "攞": "拿", "畀": "給", "搵": "找"
+}
+
+def cantonese_to_written_chinese(text: str) -> str:
+    """將廣東話口語詞彙替換為正式書面中文字"""
+    for spoken, written in CANTONESE_TO_WRITTEN.items():
+        text = text.replace(spoken, written)
+    return text
 
 # ==========================================
 # 分頁 1：文字轉語音 (TTS)
@@ -191,7 +218,7 @@ with tab_stt:
 
     with col_lang2:
         OUTPUT_LANGS = {
-            "中文繁體": "zh-Hant",
+            "中文繁體 (書面語)": "zh-Hant",
             "英文 (English)": "en"
         }
         chosen_output_lang = st.selectbox("2. 希望輸出的文字：", list(OUTPUT_LANGS.keys()))
@@ -224,10 +251,9 @@ with tab_stt:
                             tmp_wav_path = tmp_wav.name
                             sound.export(tmp_wav_path, format="wav")
                     except Exception:
-                        # 若環境無音訊轉碼工具且原檔即為 wav，則直接使用
                         tmp_wav_path = tmp_in_path
 
-                    # 配置 Azure 翻譯識別
+                    # 配置 Azure 翻譯識別引擎
                     trans_config = translation_sdk.SpeechTranslationConfig(
                         subscription=AZURE_SPEECH_KEY,
                         region=AZURE_SPEECH_REGION
@@ -241,34 +267,25 @@ with tab_stt:
                         audio_config=audio_config
                     )
 
-                    all_text_results = []
-                    done = False
+                    # 使用穩定的單次/短音訊同步識別
+                    result = recognizer.recognize_once()
 
-                    def handle_result(evt):
-                        if evt.result.reason == translation_sdk.ResultReason.TranslatedSpeech:
-                            if target_code in evt.result.translations:
-                                all_text_results.append(evt.result.translations[target_code])
+                    if result.reason == translation_sdk.ResultReason.TranslatedSpeech:
+                        recognized_text = result.translations.get(target_code, "")
+                        
+                        # 若原語言是廣東話且目標為中文繁體，自動轉為正式書面語
+                        if source_code == "zh-HK" and target_code == "zh-Hant":
+                            recognized_text = cantonese_to_written_chinese(recognized_text)
 
-                    def stop_cb(evt):
-                        nonlocal done
-                        done = True
-
-                    recognizer.recognized.connect(handle_result)
-                    recognizer.session_stopped.connect(stop_cb)
-                    recognizer.canceled.connect(stop_cb)
-
-                    recognizer.start_continuous_recognition()
-                    while not done:
-                        time.sleep(0.5)
-                    recognizer.stop_continuous_recognition()
-
-                    final_result_text = " ".join(all_text_results).strip()
-
-                    if final_result_text:
                         st.success("轉換完成！")
-                        st.text_area("輸出結果：", value=final_result_text, height=180)
+                        st.text_area("輸出結果：", value=recognized_text, height=180)
+                    elif result.reason == translation_sdk.ResultReason.NoMatch:
+                        st.warning("未能從音訊中識別到清晰的語音內容，請確認聲音是否清晰。")
+                    elif result.reason == translation_sdk.ResultReason.Canceled:
+                        cancellation = result.cancellation_details
+                        st.error(f"辨識中斷：{cancellation.reason}，詳細原因：{cancellation.error_details}")
                     else:
-                        st.warning("未能從音訊中識別到語音，請確認聲音是否清晰。")
+                        st.warning("辨識未產生有效結果。")
 
                 except Exception as ex:
                     st.error(f"轉換發生錯誤：{ex}")
