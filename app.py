@@ -204,7 +204,7 @@ with tab_tts:
 # 分頁 2：語音轉文字 (STT / 翻譯)
 # ==========================================
 with tab_stt:
-    st.caption("上傳錄音檔案，自動辨識語音並翻譯/轉換為繁體中文或英文文字")
+    st.caption("上傳錄音檔案，自動辨識語音並翻譯/轉換為繁體中文（口語或書面語）或英文")
 
     col_lang1, col_lang2 = st.columns(2)
     with col_lang1:
@@ -218,11 +218,12 @@ with tab_stt:
 
     with col_lang2:
         OUTPUT_LANGS = {
-            "中文繁體 (書面語)": "zh-Hant",
+            "中文繁體 (口語)": "zh-Hant-spoken",
+            "中文繁體 (書面語)": "zh-Hant-written",
             "英文 (English)": "en"
         }
         chosen_output_lang = st.selectbox("2. 希望輸出的文字：", list(OUTPUT_LANGS.keys()))
-        target_code = OUTPUT_LANGS[chosen_output_lang]
+        target_mode = OUTPUT_LANGS[chosen_output_lang]
 
     uploaded_audio = st.file_uploader(
         "請選擇音訊檔案 (支援 WAV, MP3, M4A, OGG 等)",
@@ -242,7 +243,6 @@ with tab_stt:
                         tmp_in.write(uploaded_audio.read())
                         tmp_in_path = tmp_in.name
 
-                    # 嘗試以 pydub 轉為標準 16kHz 單聲道 WAV 格式
                     try:
                         from pydub import AudioSegment
                         sound = AudioSegment.from_file(tmp_in_path)
@@ -254,12 +254,13 @@ with tab_stt:
                         tmp_wav_path = tmp_in_path
 
                     # 配置 Azure 翻譯識別引擎
+                    azure_target = "en" if target_mode == "en" else "zh-Hant"
                     trans_config = translation_sdk.SpeechTranslationConfig(
                         subscription=AZURE_SPEECH_KEY,
                         region=AZURE_SPEECH_REGION
                     )
                     trans_config.speech_recognition_language = source_code
-                    trans_config.add_target_language(target_code)
+                    trans_config.add_target_language(azure_target)
 
                     audio_config = speechsdk.audio.AudioConfig(filename=tmp_wav_path)
                     recognizer = translation_sdk.TranslationRecognizer(
@@ -267,14 +268,13 @@ with tab_stt:
                         audio_config=audio_config
                     )
 
-                    # 使用穩定的單次/短音訊同步識別
                     result = recognizer.recognize_once()
 
                     if result.reason == translation_sdk.ResultReason.TranslatedSpeech:
-                        recognized_text = result.translations.get(target_code, "")
-                        
-                        # 若原語言是廣東話且目標為中文繁體，自動轉為正式書面語
-                        if source_code == "zh-HK" and target_code == "zh-Hant":
+                        recognized_text = result.translations.get(azure_target, "")
+
+                        # 若選擇書面語且原音是廣東話，將口語詞替換為書面語
+                        if target_mode == "zh-Hant-written" and source_code == "zh-HK":
                             recognized_text = cantonese_to_written_chinese(recognized_text)
 
                         st.success("轉換完成！")
