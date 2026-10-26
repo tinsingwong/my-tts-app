@@ -47,7 +47,7 @@ def cantonese_to_written_chinese(text: str) -> str:
     return text
 
 # ==========================================
-# 分頁 1：文字轉語音 (TTS)
+# 分頁 1：文字轉語音 (TTS) - 已修復貼上文字消失問題
 # ==========================================
 with tab_tts:
     st.caption("微軟神經網絡自然真人聲線，支援語速微調、MP3 下載與直接檔案分享")
@@ -94,14 +94,14 @@ with tab_tts:
     with btn_col2:
         st.caption("💡 提示：點擊框內按 `Ctrl + V` 直接貼上")
 
+    # 關鍵修改：移除了 value 參數，完全交由 key="tts_text" 雙向綁定
     tts_input = st.text_area(
         label="文字輸入區",
-        value=st.session_state["tts_text"],
+        key="tts_text",
         placeholder="在此輸入或貼上英文、中文或廣東話文字...",
         height=140,
         label_visibility="collapsed"
     )
-    st.session_state["tts_text"] = tts_input
 
     def convert_with_azure(text: str, voice: str, rate: str) -> bytes:
         speech_config = speechsdk.SpeechConfig(subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION)
@@ -126,12 +126,14 @@ with tab_tts:
             raise RuntimeError("語音生成未完成")
 
     if st.button("🚀 開始轉換語音", type="primary", key="btn_run_tts"):
-        if not tts_input.strip():
+        # 直接讀取 st.session_state["tts_text"]
+        current_text = st.session_state["tts_text"].strip()
+        if not current_text:
             st.warning("請先輸入文字再進行轉換！")
         else:
             with st.spinner("AI 擬真語音生成中，請稍候..."):
                 try:
-                    st.session_state["audio_bytes"] = convert_with_azure(tts_input, voice_code, rate_str)
+                    st.session_state["audio_bytes"] = convert_with_azure(current_text, voice_code, rate_str)
                     st.success("轉換完成！")
                 except Exception as e:
                     st.error(f"錯誤：{e}")
@@ -199,7 +201,6 @@ with tab_tts:
                 """,
                 height=60,
             )
-
 # ==========================================
 # 分頁 2：語音轉文字 (STT / 翻譯) - 解決編輯還原問題
 # ==========================================
