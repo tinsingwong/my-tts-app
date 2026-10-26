@@ -201,10 +201,14 @@ with tab_tts:
             )
 
 # ==========================================
-# 分頁 2：語音轉文字 (STT / 翻譯)
+# 分頁 2：語音轉文字 (STT / 翻譯) - 解決編輯還原問題
 # ==========================================
 with tab_stt:
     st.caption("上傳錄音檔案，自動辨識語音並翻譯/轉換為繁體中文（口語或書面語）或英文")
+
+    # 確保 session_state 中有文字記憶變數
+    if "stt_result_text" not in st.session_state:
+        st.session_state["stt_result_text"] = ""
 
     col_lang1, col_lang2 = st.columns(2)
     with col_lang1:
@@ -253,7 +257,6 @@ with tab_stt:
                     except Exception:
                         tmp_wav_path = tmp_in_path
 
-                    # 配置 Azure 翻譯識別引擎
                     azure_target = "en" if target_mode == "en" else "zh-Hant"
                     trans_config = translation_sdk.SpeechTranslationConfig(
                         subscription=AZURE_SPEECH_KEY,
@@ -273,12 +276,12 @@ with tab_stt:
                     if result.reason == translation_sdk.ResultReason.TranslatedSpeech:
                         recognized_text = result.translations.get(azure_target, "")
 
-                        # 若選擇書面語且原音是廣東話，將口語詞替換為書面語
                         if target_mode == "zh-Hant-written" and source_code == "zh-HK":
                             recognized_text = cantonese_to_written_chinese(recognized_text)
 
+                        # 更新 session_state，讓文字框完全保留當前辨識內容
+                        st.session_state["stt_result_text"] = recognized_text
                         st.success("轉換完成！")
-                        st.text_area("輸出結果：", value=recognized_text, height=180)
                     elif result.reason == translation_sdk.ResultReason.NoMatch:
                         st.warning("未能從音訊中識別到清晰的語音內容，請確認聲音是否清晰。")
                     elif result.reason == translation_sdk.ResultReason.Canceled:
@@ -294,3 +297,21 @@ with tab_stt:
                         os.remove(tmp_in_path)
                     if tmp_wav_path and tmp_wav_path != tmp_in_path and os.path.exists(tmp_wav_path):
                         os.remove(tmp_wav_path)
+
+    # 顯示文字編輯區：透過 key 綁定 session_state，多次分段修改皆會即時保存
+    if st.session_state["stt_result_text"]:
+        st.markdown("---")
+        head_col1, head_col2 = st.columns([3, 1])
+        with head_col1:
+            st.write("### 📝 辨識與編輯結果：")
+        with head_col2:
+            if st.button("🗑️ 清空文字", key="clear_stt"):
+                st.session_state["stt_result_text"] = ""
+                st.rerun()
+
+        st.text_area(
+            label="文字編輯框",
+            key="stt_result_text",
+            height=200,
+            help="你可以在此自由修改文字，修改內容會直接鎖定保存，不會被重置還原。"
+        )
