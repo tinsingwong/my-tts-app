@@ -108,7 +108,7 @@ if uploaded_images and uploaded_audio:
                     list_txt.write(f"file '{safe_last}'\n")
                     list_txt.close()
 
-                    # 優化壓縮參數：crf 28 + veryfast + 單聲道 64k 音訊，大幅縮小檔案體積
+# 加入 -g 2 與 -keyint_min 2，在 -r 1 下強制每 2 秒產生一個關鍵影格（遠小於平台 15 秒限制）
                     cmd = [
                         "ffmpeg", "-y",
                         "-f", "concat", "-safe", "0", "-i", list_txt.name,
@@ -118,6 +118,9 @@ if uploaded_images and uploaded_audio:
                         "-preset", "veryfast",
                         "-crf", "28",
                         "-r", "1",
+                        "-g", "2",
+                        "-keyint_min", "2",
+                        "-sc_threshold", "0",
                         "-pix_fmt", "yuv420p",
                         "-c:a", "aac", "-ac", "1", "-b:a", "64k",
                         "-shortest",
