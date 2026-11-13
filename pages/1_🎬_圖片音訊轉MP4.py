@@ -113,20 +113,27 @@ if uploaded_images and uploaded_audio:
                         "ffmpeg", "-y",
                         "-f", "concat", "-safe", "0", "-i", list_txt.name,
                         "-i", audio_path,
+                        "-vsync", "cfr",
+                        "-r", "24",
                         "-c:v", "libx264",
-                        "-tune", "stillimage",
+                        "-profile:v", "high",
+                        "-level", "4.0",
                         "-preset", "veryfast",
-                        "-crf", "28",
-                        "-r", "1",
-                        "-g", "2",
-                        "-keyint_min", "2",
+                        "-crf", "26",
+                        "-g", "48",
+                        "-keyint_min", "48",
                         "-sc_threshold", "0",
+                        "-force_key_frames", "expr:gte(t,n_forced*2)",
                         "-pix_fmt", "yuv420p",
-                        "-c:a", "aac", "-ac", "1", "-b:a", "64k",
+                        "-c:a", "aac",
+                        "-ac", "2",
+                        "-ar", "48000",
+                        "-b:a", "128k",
+                        "-movflags", "+faststart",
                         "-shortest",
                         output_mp4
                     ]
-                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # <--- 緊接在後面
 
                     with open(output_mp4, "rb") as f:
                         video_bytes = f.read()
