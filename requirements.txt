@@ -3,3 +3,5 @@ azure-cognitiveservices-speech
 pydub
 moviepy
 pillow
+google-genai
+pillow
