@@ -29,7 +29,7 @@ if uploaded_file is not None:
 
           # 呼叫 Gemini 模型處理圖片
           response = client.models.generate_content(
-              model="gemini-2.5-flash",
+              model="gemini-3.8-flash",
               contents=[
                   image,
                   (
