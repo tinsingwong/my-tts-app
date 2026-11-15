@@ -29,15 +29,15 @@ else:
 
 # 2. 上傳圖片
 uploaded_images = st.file_uploader(
-    "2. 請選擇圖片 (支援 JPG, PNG，可一次選多張自動輪播)：",
-    type=["jpg", "jpeg", "png"],
-    accept_multiple_files=True
+    "2. 請選擇圖片 (可一次選多張自動輪播)：",
+    accept_multiple_files=True,
+    key="mp4_images_uploader"
 )
 
 # 3. 上傳音訊
 uploaded_audio = st.file_uploader(
-    "3. 請選擇音訊檔案 (支援 MP3, WAV, M4A)：",
-    type=["mp3", "wav", "m4a", "ogg"]
+    "3. 請選擇音訊檔案：",
+    key="mp4_audio_uploader"
 )
 
 def fit_image_to_canvas(pil_img: Image.Image, target_w: int, target_h: int) -> Image.Image:
