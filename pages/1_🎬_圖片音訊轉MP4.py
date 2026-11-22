@@ -5,44 +5,26 @@ import subprocess
 from moviepy import AudioFileClip
 from PIL import Image
 
-st.set_page_config(page_title="圖片音訊合成 MP4", page_icon="🎬", layout="centered")
+st.set_page_config(page_title="圖片音訊雙格式合成 MP4", page_icon="🎬", layout="wide")
 
-st.title("🎬 圖片 + 音訊 一鍵合成 MP4")
-st.caption("支援 16:9 橫向與 9:16 手機直立式格式（純白底邊、高壓縮輕巧檔案，限 3 分鐘內）")
+st.title("🎬 圖片 + 音訊 一鍵雙格式合成 MP4")
+st.caption("一鍵同時產出 16:9 橫向 (1280×720) 與 9:16 手機直立式 (720×1280) 雙版本（純白底邊、高壓縮輕巧檔案，限 3 分鐘內）")
 
-# 1. 選擇影片比例格式
-aspect_option = st.radio(
-    "1. 請選擇輸出影片格式：",
-    [
-        "📺 16:9 橫向寬螢幕 (1280 × 720 - 適合電腦 / YouTube)",
-        "📱 9:16 手機直立式 (720 × 1280 - 適合 WhatsApp / Reels / Shorts)"
-    ],
-    horizontal=False
-)
-
-if "16:9" in aspect_option:
-    TARGET_W, TARGET_H = 1280, 720
-    format_tag = "16x9"
-else:
-    TARGET_W, TARGET_H = 720, 1280
-    format_tag = "9x16"
-
-# 2. 上傳圖片
+# 1. 上傳圖片
 uploaded_images = st.file_uploader(
-    "2. 請選擇圖片 (可一次選多張自動輪播)：",
+    "1. 請選擇圖片 (可一次選多張自動輪播)：",
     accept_multiple_files=True,
     key="mp4_images_uploader"
 )
 
-# 3. 上傳音訊
+# 2. 上傳音訊
 uploaded_audio = st.file_uploader(
-    "3. 請選擇音訊檔案：",
+    "2. 請選擇音訊檔案：",
     key="mp4_audio_uploader"
 )
 
 def fit_image_to_canvas(pil_img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     """將圖片等比例縮放並置中放入純白背景畫布，保持原圖不變形"""
-    # 若為透明背景 PNG，先合成在白底上避免變黑
     if pil_img.mode in ("RGBA", "LA") or (pil_img.mode == "P" and "transparency" in pil_img.info):
         alpha_bg = Image.new("RGBA", pil_img.size, (255, 255, 255, 255))
         img = Image.alpha_composite(alpha_bg, pil_img.convert("RGBA")).convert("RGB")
@@ -56,7 +38,6 @@ def fit_image_to_canvas(pil_img: Image.Image, target_w: int, target_h: int) -> I
     
     resized_img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     
-    # 建立純白背景畫布 (255, 255, 255) 並將圖片貼在正中央
     canvas = Image.new("RGB", (target_w, target_h), (255, 255, 255))
     paste_x = (target_w - new_w) // 2
     paste_y = (target_h - new_h) // 2
@@ -64,16 +45,69 @@ def fit_image_to_canvas(pil_img: Image.Image, target_w: int, target_h: int) -> I
     
     return canvas
 
+def render_single_format(pil_images: list, audio_path: str, per_img_duration: float, target_w: int, target_h: int, temp_files: list) -> bytes:
+    """根據指定解析度生成單一比例的 MP4 位元組資料"""
+    output_mp4 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    temp_files.append(output_mp4)
+
+    list_txt = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8")
+    temp_files.append(list_txt.name)
+
+    last_img_path = ""
+    for raw_pil in pil_images:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
+            fitted_img = fit_image_to_canvas(raw_pil, target_w, target_h)
+            fitted_img.save(tmp_img.name, format="JPEG", quality=85)
+            temp_files.append(tmp_img.name)
+            last_img_path = tmp_img.name
+
+            safe_path = tmp_img.name.replace("\\", "/")
+            list_txt.write(f"file '{safe_path}'\n")
+            list_txt.write(f"duration {per_img_duration:.3f}\n")
+
+    safe_last = last_img_path.replace("\\", "/")
+    list_txt.write(f"file '{safe_last}'\n")
+    list_txt.close()
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", list_txt.name,
+        "-i", audio_path,
+        "-vsync", "cfr",
+        "-r", "24",
+        "-c:v", "libx264",
+        "-profile:v", "high",
+        "-level", "4.0",
+        "-preset", "veryfast",
+        "-crf", "26",
+        "-g", "48",
+        "-keyint_min", "48",
+        "-sc_threshold", "0",
+        "-force_key_frames", "expr:gte(t,n_forced*2)",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-ac", "2",
+        "-ar", "48000",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        "-shortest",
+        output_mp4
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    with open(output_mp4, "rb") as f:
+        return f.read()
+
 if uploaded_images and uploaded_audio:
     st.audio(uploaded_audio)
 
-    if st.button("🚀 開始合成 MP4 影片", type="primary"):
-        with st.spinner(f"正在生成 {format_tag} 格式 MP4 影片，請稍候..."):
+    if st.button("🚀 一鍵同時合成 16:9 與 9:16 雙格式 MP4", type="primary", use_container_width=True):
+        with st.spinner("正在同時生成 16:9 橫式與 9:16 直式雙版本 MP4，請稍候..."):
             temp_files = []
             try:
                 audio_ext = os.path.splitext(uploaded_audio.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=audio_ext) as tmp_aud:
-                    tmp_aud.write(uploaded_audio.read())
+                    tmp_aud.write(uploaded_audio.getvalue())
                     audio_path = tmp_aud.name
                     temp_files.append(audio_path)
 
@@ -85,72 +119,18 @@ if uploaded_images and uploaded_audio:
                     st.error(f"音訊長度為 {total_duration:.1f} 秒，超過 3 分鐘（180秒）限制，請縮短後再試。")
                 else:
                     per_img_duration = total_duration / len(uploaded_images)
-                    output_mp4 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-                    temp_files.append(output_mp4)
+                    # 先將上傳圖片讀取為 PIL 物件，避免第二次轉檔時檔案指標已到底部
+                    pil_list = [Image.open(img_f) for img_f in uploaded_images]
 
-                    list_txt = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8")
-                    temp_files.append(list_txt.name)
+                    bytes_16x9 = render_single_format(pil_list, audio_path, per_img_duration, 1280, 720, temp_files)
+                    bytes_9x16 = render_single_format(pil_list, audio_path, per_img_duration, 720, 1280, temp_files)
 
-                    last_img_path = ""
-                    for img_file in uploaded_images:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-                            raw_pil = Image.open(img_file)
-                            fitted_img = fit_image_to_canvas(raw_pil, TARGET_W, TARGET_H)
-                            fitted_img.save(tmp_img.name, format="JPEG", quality=85)
-                            temp_files.append(tmp_img.name)
-                            last_img_path = tmp_img.name
-
-                            safe_path = tmp_img.name.replace("\\", "/")
-                            list_txt.write(f"file '{safe_path}'\n")
-                            list_txt.write(f"duration {per_img_duration:.3f}\n")
-
-                    safe_last = last_img_path.replace("\\", "/")
-                    list_txt.write(f"file '{safe_last}'\n")
-                    list_txt.close()
-
-# 加入 -g 2 與 -keyint_min 2，在 -r 1 下強制每 2 秒產生一個關鍵影格（遠小於平台 15 秒限制）
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-f", "concat", "-safe", "0", "-i", list_txt.name,
-                        "-i", audio_path,
-                        "-vsync", "cfr",
-                        "-r", "24",
-                        "-c:v", "libx264",
-                        "-profile:v", "high",
-                        "-level", "4.0",
-                        "-preset", "veryfast",
-                        "-crf", "26",
-                        "-g", "48",
-                        "-keyint_min", "48",
-                        "-sc_threshold", "0",
-                        "-force_key_frames", "expr:gte(t,n_forced*2)",
-                        "-pix_fmt", "yuv420p",
-                        "-c:a", "aac",
-                        "-ac", "2",
-                        "-ar", "48000",
-                        "-b:a", "128k",
-                        "-movflags", "+faststart",
-                        "-shortest",
-                        output_mp4
-                    ]
-                    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # <--- 緊接在後面
-
-                    with open(output_mp4, "rb") as f:
-                        video_bytes = f.read()
-
-                    file_size_mb = len(video_bytes) / (1024 * 1024)
-                    st.success(f"合成完成！格式：{TARGET_W}×{TARGET_H}，長度：{total_duration:.1f} 秒，檔案大小：{file_size_mb:.2f} MB")
-                    
-                    st.write("### 🎬 影片預覽：")
-                    st.video(video_bytes)
-                    
-                    st.download_button(
-                        label=f"💾 下載 MP4 影片 ({format_tag} - {file_size_mb:.2f} MB)",
-                        data=video_bytes,
-                        file_name=f"video_{format_tag}.mp4",
-                        mime="video/mp4",
-                        type="primary"
-                    )
+                    # 存入 session_state，確保點擊其中一個下載按鈕時不會清除另一支影片
+                    st.session_state["dual_mp4_result"] = {
+                        "duration": total_duration,
+                        "bytes_16x9": bytes_16x9,
+                        "bytes_9x16": bytes_9x16,
+                    }
 
             except subprocess.CalledProcessError as cpe:
                 st.error(f"FFmpeg 轉檔失敗：{cpe.stderr.decode('utf-8', errors='ignore')}")
@@ -163,3 +143,38 @@ if uploaded_images and uploaded_audio:
                             os.remove(f_path)
                         except Exception:
                             pass
+
+# 若已生成結果，並排顯示 16:9 與 9:16 的預覽與獨立下載按鈕
+if "dual_mp4_result" in st.session_state:
+    res = st.session_state["dual_mp4_result"]
+    size_16x9 = len(res["bytes_16x9"]) / (1024 * 1024)
+    size_9x16 = len(res["bytes_9x16"]) / (1024 * 1024)
+
+    st.success(f"✅ 雙格式合成完成！總長度：{res['duration']:.1f} 秒")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📺 16:9 橫向寬螢幕 (1280×720)")
+        st.video(res["bytes_16x9"])
+        st.download_button(
+            label=f"💾 下載 16:9 MP4 ({size_16x9:.2f} MB)",
+            data=res["bytes_16x9"],
+            file_name="video_16x9.mp4",
+            mime="video/mp4",
+            type="primary",
+            use_container_width=True,
+            key="dl_16x9"
+        )
+
+    with col2:
+        st.subheader("📱 9:16 手機直立式 (720×1280)")
+        st.video(res["bytes_9x16"])
+        st.download_button(
+            label=f"💾 下載 9:16 MP4 ({size_9x16:.2f} MB)",
+            data=res["bytes_9x16"],
+            file_name="video_9x16.mp4",
+            mime="video/mp4",
+            type="primary",
+            use_container_width=True,
+            key="dl_9x16"
+        )
