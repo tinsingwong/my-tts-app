@@ -7,8 +7,8 @@ from PIL import Image
 
 st.set_page_config(page_title="圖片音訊雙格式合成 MP4", page_icon="🎬", layout="wide")
 
-st.title("🎬 圖片 + 音訊 一鍵雙格式合成 MP4")
-st.caption("一鍵同時產出 16:9 橫向 (1280×720) 與 9:16 手機直立式 (720×1280) 雙版本（純白底邊、高壓縮輕巧檔案，限 3 分鐘內）")
+st.title("🎬 圖片 + 音訊 一鍵雙格式合成 MP4 (Full HD 1080p)")
+st.caption("一鍵同時產出 16:9 橫向 (1920×1080) 與 9:16 手機直立式 (1080×1920) 雙版本（純白底邊、高壓縮輕巧檔案，限 3 分鐘內）")
 
 # 1. 上傳圖片
 uploaded_images = st.file_uploader(
@@ -57,7 +57,7 @@ def render_single_format(pil_images: list, audio_path: str, per_img_duration: fl
     for raw_pil in pil_images:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
             fitted_img = fit_image_to_canvas(raw_pil, target_w, target_h)
-            fitted_img.save(tmp_img.name, format="JPEG", quality=85)
+            fitted_img.save(tmp_img.name, format="JPEG", quality=88)
             temp_files.append(tmp_img.name)
             last_img_path = tmp_img.name
 
@@ -102,7 +102,7 @@ if uploaded_images and uploaded_audio:
     st.audio(uploaded_audio)
 
     if st.button("🚀 一鍵同時合成 16:9 與 9:16 雙格式 MP4", type="primary", use_container_width=True):
-        with st.spinner("正在同時生成 16:9 橫式與 9:16 直式雙版本 MP4，請稍候..."):
+        with st.spinner("正在同時生成 1920×1080 與 1080×1920 雙版本 MP4，請稍候..."):
             temp_files = []
             try:
                 audio_ext = os.path.splitext(uploaded_audio.name)[1]
@@ -119,13 +119,12 @@ if uploaded_images and uploaded_audio:
                     st.error(f"音訊長度為 {total_duration:.1f} 秒，超過 3 分鐘（180秒）限制，請縮短後再試。")
                 else:
                     per_img_duration = total_duration / len(uploaded_images)
-                    # 先將上傳圖片讀取為 PIL 物件，避免第二次轉檔時檔案指標已到底部
                     pil_list = [Image.open(img_f) for img_f in uploaded_images]
 
-                    bytes_16x9 = render_single_format(pil_list, audio_path, per_img_duration, 1280, 720, temp_files)
-                    bytes_9x16 = render_single_format(pil_list, audio_path, per_img_duration, 720, 1280, temp_files)
+                    # 橫式 1920x1080 與 直式 1080x1920
+                    bytes_16x9 = render_single_format(pil_list, audio_path, per_img_duration, 1920, 1080, temp_files)
+                    bytes_9x16 = render_single_format(pil_list, audio_path, per_img_duration, 1080, 1920, temp_files)
 
-                    # 存入 session_state，確保點擊其中一個下載按鈕時不會清除另一支影片
                     st.session_state["dual_mp4_result"] = {
                         "duration": total_duration,
                         "bytes_16x9": bytes_16x9,
@@ -144,7 +143,7 @@ if uploaded_images and uploaded_audio:
                         except Exception:
                             pass
 
-# 若已生成結果，並排顯示 16:9 與 9:16 的預覽與獨立下載按鈕
+# 若已生成結果，並排顯示預覽與獨立下載按鈕
 if "dual_mp4_result" in st.session_state:
     res = st.session_state["dual_mp4_result"]
     size_16x9 = len(res["bytes_16x9"]) / (1024 * 1024)
@@ -154,12 +153,12 @@ if "dual_mp4_result" in st.session_state:
 
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("📺 16:9 橫向寬螢幕 (1280×720)")
+        st.subheader("📺 16:9 橫向寬螢幕 (1920×1080)")
         st.video(res["bytes_16x9"])
         st.download_button(
             label=f"💾 下載 16:9 MP4 ({size_16x9:.2f} MB)",
             data=res["bytes_16x9"],
-            file_name="video_16x9.mp4",
+            file_name="video_1920x1080.mp4",
             mime="video/mp4",
             type="primary",
             use_container_width=True,
@@ -167,12 +166,12 @@ if "dual_mp4_result" in st.session_state:
         )
 
     with col2:
-        st.subheader("📱 9:16 手機直立式 (720×1280)")
+        st.subheader("📱 9:16 手機直立式 (1080×1920)")
         st.video(res["bytes_9x16"])
         st.download_button(
             label=f"💾 下載 9:16 MP4 ({size_9x16:.2f} MB)",
             data=res["bytes_9x16"],
-            file_name="video_9x16.mp4",
+            file_name="video_1080x1920.mp4",
             mime="video/mp4",
             type="primary",
             use_container_width=True,
